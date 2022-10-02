@@ -1,0 +1,125 @@
+---
+title: "TidyTuesday_220927"
+author: "Philibertus88"
+date: "2022-10-02"
+output: 
+  html_document:
+    code_folding: hide
+    theme: cosmo
+    
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE, error = FALSE,
+                      fig.height = 9, fig.width = 12)
+```
+
+
+```{r libraries}
+#packages used for viz and data wrangling
+require(tidyverse)
+require(reactable)
+require(cowplot)
+require(plotly)
+require(usmap)
+require(htmltools)
+```
+
+
+```{r data}
+artists <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2022/2022-09-27/artists.csv')
+
+artists_type_percent <- artists %>%
+  group_by(type) %>%
+  summarize(artists_percent = sum(artists_n, na.rm =TRUE) / sum(all_workers_n, na.rm =TRUE) * 100) %>%
+  arrange(desc(artists_percent))
+
+
+percent_total <- artists %>%
+  group_by(type) %>%
+  summarize(artists_percent = sum(artists_n, na.rm =TRUE) / sum(all_workers_n, na.rm =TRUE) * 100) %>%
+  summarize(artists_total_percent = sum(artists_percent)) %>%
+  pull(artists_total_percent)
+
+new_row <- tribble(~type, ~artists_percent,
+                   "Total", 1.442409)
+  
+artists_type_percent <- artists_type_percent %>%
+  dplyr::bind_rows(new_row)
+
+
+# Render a bar chart with a label on the left
+bar_chart <- function(label, width = "100%", height = "1rem", fill = "purple", background = NULL) {
+  bar <- div(style = list(background = fill, width = width, height = height))
+  chart <- div(style = list(flexGrow = 1, marginLeft = "0.5rem", background = background), bar)
+  div(style = list(display = "flex", alignItems = "center"), label, chart)
+}
+
+```
+
+**Table: ** Designers, Writers & Authors are the most represented types of artists in the US military workfroce
+```{r}
+reactable(
+  artists_type_percent,
+  style = list(fontFamily = "Work Sans, sans-serif", fontSize = "0.875rem"),
+  columns = list(
+    artists_percent = colDef(name = "Artists (in %)", align = "left", cell = function(value) {
+      width <- paste0(value / max(artists_type_percent$artists_percent) * 100, "%")
+      bar_chart(value, width = width)
+    })
+  )
+)
+```
+
+
+
+
+**Interactive Plot: ** White artists are the predominant race among the US military workforce artists
+```{r}
+artists_race <- artists %>%
+  group_by(state, race, type) %>%
+  arrange(desc(location_quotient))
+
+artists_race_numbers_plot <- artists_race %>%
+  ggplot(aes(x = state, y = artists_n, size = 6*location_quotient, color = race,
+             text=paste0("<b>State: </b>", state, "<br>",
+                         "<b>Amount of artists: </b>", artists_n,"<br>",
+                         "<b>Occupation: </b>", type, "<br>",
+                         "<b>Location Quotient: </b>", location_quotient, "<br>",
+                         "<b>Race: </b>", race))) +
+  geom_point(show.legend = FALSE) +
+  theme_cowplot() +
+  scale_y_log10() +
+  coord_flip() +
+  scale_color_manual(values = c("African-America" = "black", "Asian" = "gold", "Hispanic" = "firebrick", "White" = "dodgerblue", "Other" = "grey30")) +
+  labs(title = "Artists in Military Workforce by US States", subtitle = "Artists in US Military Workforce are predominantly White", x = "", y = "Number of Artists in US Military Workforce (log10)") 
+
+require(plotly)  
+ggplotly(artists_race_numbers_plot, tooltip = "text")
+```
+
+
+
+
+**Map: **Coloardo, Georgia & New Jersey have the highest rate of artists in the US military workforce
+```{r}
+artists_type_states <- artists %>%
+  group_by(state, type) %>%
+  replace_na(list(artists_n = 0, all_workers_n = 0, location_quotient = 0)) %>%
+  summarize(percent_artists = sum(artists_n, na.rm = TRUE)/sum(all_workers_n, na.rm = TRUE) * 100,
+            number_artists = sum(artists_n, na.rm = TRUE)) %>%
+  arrange(desc(percent_artists))
+
+artists_type_states$fips <- usmap::fips(artists_type_states$state)
+US <- plot_usmap(data = artists_type_states, values = "percent_artists",  color = "black", labels=TRUE) + 
+  scale_fill_continuous( low = "white", high = "darkblue", 
+                         name = "% artists in\nmilitary workforce",
+                         label = scales::comma) + 
+  theme(legend.position = "right") + 
+  theme(panel.background = element_rect(colour = "black")) + 
+  labs(title = "States with highest rates of artists in the military workforce")
+
+US
+```
+
+
